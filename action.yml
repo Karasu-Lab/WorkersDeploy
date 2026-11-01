@@ -3,7 +3,7 @@ description: >-
   Deploys the calling repository's app to Cloudflare Workers, standalone:
   checks the repository out, keeps its pnpm-lock.yaml in step with its
   package.json, installs against the published @karasu-lab/* packages,
-  builds for the detected project type — Next.js via OpenNext, Elysia
+  builds for the detected project type — Next.js via OpenNext, ElysiaJS
   via Vite — and converges on a single Workers deployment (production
   deploy, or a per-branch Preview), pruning old Previews afterwards.
 author: Karasu Lab
@@ -113,7 +113,7 @@ runs:
         node "$GITHUB_ACTION_PATH/scripts/export-public-vars.mjs" "$MODE"
         pnpm exec opennextjs-cloudflare build
 
-    - name: Build an Elysia app
+    - name: Build an ElysiaJS app
       if: steps.detect.outputs.project-type == 'elysia'
       shell: bash
       run: pnpm exec vite build

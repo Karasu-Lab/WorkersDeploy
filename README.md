@@ -1,8 +1,8 @@
 # WorkersDeploy
 
 A reusable GitHub Action that deploys an app to Cloudflare Workers
-**standalone, from the app's own repository** — no hub workspace is
-assembled, and the shared packages come from the published
+**standalone, from the app's own repository** — no workspace is
+assembled in Karasu-Lab/Karasu-Lab, and the shared packages come from the published
 `@karasu-lab/*` packages on GitHub Packages (Karasu-Lab/npm), pinned by
 the app repository's own `pnpm-lock.yaml`.
 
@@ -13,7 +13,7 @@ the app repository's own `pnpm-lock.yaml`.
    - **Next.js** (`next` dependency): exports the public variables from
      `wrangler.jsonc` for the target environment, then builds with
      OpenNext (`opennextjs-cloudflare build`).
-   - **Elysia** (`elysia` dependency): builds with Vite (`vite build`).
+   - **ElysiaJS** (`elysia` dependency): builds with Vite (`vite build`).
    - Anything else: runs the app's `build` script if it has one.
 3. Keeps the lockfile in step before installing: `pnpm install
    --lockfile-only` runs first and any change is committed back to the

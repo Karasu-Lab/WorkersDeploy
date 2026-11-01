@@ -4,7 +4,7 @@
  * and reports it as the `project-type` step output:
  *
  * - `nextjs`  when the app depends on Next.js
- * - `elysia`  when the app depends on Elysia
+ * - `elysia`  when the app depends on ElysiaJS
  * - `generic` otherwise (no framework build is assumed)
  */
 import { appendFileSync, readFileSync } from 'node:fs';
