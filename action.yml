@@ -35,6 +35,12 @@ inputs:
     description: "Node.js version"
     required: false
     default: "24"
+  pnpm-version:
+    description: >-
+      pnpm version, used when the app does not pin one itself through
+      the packageManager field (the api apps rely on this default)
+    required: false
+    default: "12.15.0"
   keep-previews:
     description: "How many of the newest Previews to keep"
     required: false
@@ -51,6 +57,15 @@ runs:
       shell: bash
       run: node "$GITHUB_ACTION_PATH/scripts/detect-project.mjs"
 
+    - name: Resolve the pnpm version
+      id: pnpm
+      shell: bash
+      env:
+        REQUESTED: ${{ inputs.pnpm-version }}
+      run: |
+        PINNED=$(node -p "require('./package.json').packageManager?.split('@')[1] ?? ''" 2>/dev/null || true)
+        echo "version=${PINNED:-$REQUESTED}" >> "$GITHUB_OUTPUT"
+
     - name: Set up Node.js
       uses: actions/setup-node@v4
       with:
@@ -60,6 +75,8 @@ runs:
 
     - name: Set up pnpm
       uses: pnpm/action-setup@v4
+      with:
+        version: ${{ steps.pnpm.outputs.version }}
 
     - name: Regenerate the lockfile if package.json moved
       shell: bash
