@@ -104,14 +104,22 @@ runs:
       shell: bash
       run: pnpm install --frozen-lockfile
 
-    - name: Build a Next.js app
+    # The export must be its own step: it publishes the variables
+    # through GITHUB_ENV, which only takes effect from the next step
+    # on. Exporting and building in one step leaves the build without
+    # the NEXT_PUBLIC_* variables, so the client bundle inlines them
+    # as undefined and the app crashes on load.
+    - name: Export the public variables for a Next.js app
       if: steps.detect.outputs.project-type == 'nextjs'
       shell: bash
       env:
         MODE: ${{ inputs.mode }}
-      run: |
-        node "$GITHUB_ACTION_PATH/scripts/export-public-vars.mjs" "$MODE"
-        pnpm exec opennextjs-cloudflare build
+      run: node "$GITHUB_ACTION_PATH/scripts/export-public-vars.mjs" "$MODE"
+
+    - name: Build a Next.js app
+      if: steps.detect.outputs.project-type == 'nextjs'
+      shell: bash
+      run: pnpm exec opennextjs-cloudflare build
 
     - name: Build an ElysiaJS app
       if: steps.detect.outputs.project-type == 'elysia'
