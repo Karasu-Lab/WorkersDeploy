@@ -58,6 +58,7 @@ environment.
 | `secret-names` | no | `""` | Space-separated secret names read from the environment, written to a secrets file for Previews and bulk-synced in production. Unset names fall back to the app's `env.local` vars in its wrangler config |
 | `preview-args` | no | `""` | Extra arguments for the Preview command; `{branch}` is substituted |
 | `node-version` | no | `24` | Node.js version |
+| `pnpm-version` | no | `12.15.0` | pnpm version, used when the app does not pin one through the `packageManager` field |
 | `keep-previews` | no | `5` | How many of the newest Previews to keep |
 
 ### Environment the caller provides
