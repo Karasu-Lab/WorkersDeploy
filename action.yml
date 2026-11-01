@@ -1,0 +1,159 @@
+name: Workers Deploy
+description: >-
+  Deploys the calling repository's app to Cloudflare Workers, standalone:
+  checks the repository out, keeps its pnpm-lock.yaml in step with its
+  package.json, installs against the published @karasu-lab/* packages,
+  builds for the detected project type — Next.js via OpenNext, Elysia
+  via Vite — and converges on a single Workers deployment (production
+  deploy, or a per-branch Preview), pruning old Previews afterwards.
+author: Karasu Lab
+branding:
+  icon: upload-cloud
+  color: orange
+
+inputs:
+  mode:
+    description: "production deploys the worker; preview deploys a branch Preview"
+    required: true
+  worker-name:
+    description: "Name of the Cloudflare Worker (also the name whose Previews are pruned)"
+    required: true
+  secret-names:
+    description: >-
+      Optional space-separated names exposed to the worker as secrets.
+      Their values are read from the environment; they are written to a
+      secrets file used by the Preview and, in production, synced with
+      wrangler secret bulk. Names with no value fall back to the app's
+      env.local vars in its wrangler config, as before.
+    required: false
+    default: ""
+  preview-args:
+    description: "Optional extra arguments for the Preview command. Placeholder: {branch}"
+    required: false
+    default: ""
+  node-version:
+    description: "Node.js version"
+    required: false
+    default: "24"
+  keep-previews:
+    description: "How many of the newest Previews to keep"
+    required: false
+    default: "5"
+
+runs:
+  using: composite
+  steps:
+    - name: Check out the calling repository
+      uses: actions/checkout@v4
+
+    - name: Detect the project type
+      id: detect
+      shell: bash
+      run: node "$GITHUB_ACTION_PATH/scripts/detect-project.mjs"
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        registry-url: https://npm.pkg.github.com
+        scope: "@karasu-lab"
+
+    - name: Set up pnpm
+      uses: pnpm/action-setup@v4
+
+    - name: Regenerate the lockfile if package.json moved
+      shell: bash
+      env:
+        BRANCH: ${{ github.ref_name }}
+      run: |
+        pnpm install --lockfile-only
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add pnpm-lock.yaml
+        if git diff --cached --quiet; then
+          echo "pnpm-lock.yaml is up to date"
+          exit 0
+        fi
+        git commit -m "chore: regenerate pnpm-lock.yaml [skip ci]"
+        for attempt in 1 2 3; do
+          if git push; then
+            exit 0
+          fi
+          git pull --rebase origin "$BRANCH"
+        done
+        git push
+
+    - name: Install dependencies
+      shell: bash
+      run: pnpm install --frozen-lockfile
+
+    - name: Build a Next.js app
+      if: steps.detect.outputs.project-type == 'nextjs'
+      shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
+      run: |
+        node "$GITHUB_ACTION_PATH/scripts/export-public-vars.mjs" "$MODE"
+        pnpm exec opennextjs-cloudflare build
+
+    - name: Build an Elysia app
+      if: steps.detect.outputs.project-type == 'elysia'
+      shell: bash
+      run: pnpm exec vite build
+
+    - name: Build a generic app
+      if: steps.detect.outputs.project-type == 'generic'
+      shell: bash
+      run: |
+        if node -e "process.exit(require('./package.json').scripts?.build ? 0 : 1)"; then
+          pnpm build
+        fi
+
+    - name: Write the worker secrets file
+      if: inputs.secret-names != ''
+      shell: bash
+      env:
+        SECRET_NAMES: ${{ inputs.secret-names }}
+      run: |
+        SECRETS_FILE="$RUNNER_TEMP/worker-secrets.json"
+        echo "SECRETS_FILE=$SECRETS_FILE" >> "$GITHUB_ENV"
+        node "$GITHUB_ACTION_PATH/scripts/worker-secrets-file.mjs" . "$SECRETS_FILE" $SECRET_NAMES
+
+    - name: Deploy to production
+      if: inputs.mode == 'production'
+      shell: bash
+      run: pnpm exec wrangler deploy
+
+    - name: Sync the worker secrets in production
+      if: inputs.mode == 'production' && inputs.secret-names != ''
+      shell: bash
+      run: pnpm exec wrangler secret bulk "$SECRETS_FILE"
+
+    - name: Deploy the branch Preview
+      if: inputs.mode == 'preview'
+      shell: bash
+      env:
+        BRANCH: ${{ github.ref_name }}
+        PREVIEW_ARGS: ${{ inputs.preview-args }}
+        HAS_SECRETS: ${{ inputs.secret-names != '' }}
+      run: |
+        ARGS=()
+        if [ "$HAS_SECRETS" = "true" ]; then
+          ARGS+=(--secrets-file "$SECRETS_FILE")
+        fi
+        if [ -n "$PREVIEW_ARGS" ]; then
+          EXPANDED="${PREVIEW_ARGS//\{branch\}/$BRANCH}"
+          # Word splitting is intended: preview-args is a list of arguments.
+          read -r -a EXTRA <<< "$EXPANDED"
+          ARGS+=("${EXTRA[@]}")
+        fi
+        pnpm exec wrangler preview --name "$BRANCH" "${ARGS[@]}"
+
+    - name: Prune old Previews
+      shell: bash
+      env:
+        WORKER_NAME: ${{ inputs.worker-name }}
+        KEEP: ${{ inputs.keep-previews }}
+        CURRENT_BRANCH: ${{ github.ref_name }}
+        APP_DIR: .
+      run: node "$GITHUB_ACTION_PATH/scripts/prune-previews.mjs"
