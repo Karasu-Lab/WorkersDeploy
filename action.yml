@@ -6,6 +6,8 @@ description: >-
   builds for the detected project type — Next.js via OpenNext, ElysiaJS
   via Vite — and converges on a single Workers deployment (production
   deploy, or a per-branch Preview), pruning old Previews afterwards.
+  Alternatively assembles the workspace from a monorepo, initializing
+  only the listed submodules.
 author: Karasu Lab
 branding:
   icon: upload-cloud
@@ -18,6 +20,30 @@ inputs:
   worker-name:
     description: "Name of the Cloudflare Worker (also the name whose Previews are pruned)"
     required: true
+  monorepo:
+    description: >-
+      Optional monorepo (owner/name) to assemble the workspace from. When
+      set, the calling repository is not checked out on its own: the
+      monorepo is cloned without its submodules, and only app-path and the
+      paths listed in submodules are initialized. app-path is then pinned
+      to the triggering commit.
+    required: false
+    default: ""
+  monorepo-branch:
+    description: "Monorepo branch cloned for the assembly"
+    required: false
+    default: dev
+  app-path:
+    description: "App directory inside the assembled workspace (required with monorepo)"
+    required: false
+    default: "."
+  submodules:
+    description: >-
+      Space- or newline-separated submodule paths to initialize besides
+      app-path, used with monorepo. Submodules that are not listed are
+      never cloned.
+    required: false
+    default: ""
   secret-names:
     description: >-
       Optional space-separated names exposed to the worker as secrets.
@@ -50,11 +76,31 @@ runs:
   using: composite
   steps:
     - name: Check out the calling repository
+      if: inputs.monorepo == ''
       uses: actions/checkout@v4
+
+    - name: Assemble the workspace from the monorepo
+      if: inputs.monorepo != ''
+      shell: bash
+      env:
+        APP_SHA: ${{ github.sha }}
+        MONOREPO: ${{ inputs.monorepo }}
+        MONOREPO_BRANCH: ${{ inputs.monorepo-branch }}
+        APP_PATH: ${{ inputs.app-path }}
+        SUBMODULES: ${{ inputs.submodules }}
+      run: |
+        git clone --branch "$MONOREPO_BRANCH" --no-recurse-submodules "https://github.com/${MONOREPO}.git" .
+        set -f
+        PATHS=($SUBMODULES)
+        set +f
+        git submodule update --init -- "$APP_PATH" "${PATHS[@]}"
+        git -C "$APP_PATH" fetch origin "$APP_SHA"
+        git -C "$APP_PATH" checkout "$APP_SHA"
 
     - name: Detect the project type
       id: detect
       shell: bash
+      working-directory: ${{ inputs.app-path }}
       run: node "$GITHUB_ACTION_PATH/scripts/detect-project.mjs"
 
     - name: Resolve the pnpm version
@@ -79,6 +125,7 @@ runs:
         version: ${{ steps.pnpm.outputs.version }}
 
     - name: Regenerate the lockfile if package.json moved
+      if: inputs.monorepo == ''
       shell: bash
       env:
         BRANCH: ${{ github.ref_name }}
@@ -102,24 +149,32 @@ runs:
 
     - name: Install dependencies
       shell: bash
-      run: pnpm install --frozen-lockfile
+      env:
+        MONOREPO: ${{ inputs.monorepo }}
+        APP_PATH: ${{ inputs.app-path }}
+      run: |
+        if [ -n "$MONOREPO" ]; then
+          pnpm install --frozen-lockfile --filter "./${APP_PATH}..."
+        else
+          pnpm install --frozen-lockfile
+        fi
 
-    # The apps read their configuration from the server's environment
-    # at request time, so a Next.js build needs no environment
-    # variables from the worker configuration.
     - name: Build a Next.js app
       if: steps.detect.outputs.project-type == 'nextjs'
       shell: bash
+      working-directory: ${{ inputs.app-path }}
       run: pnpm exec opennextjs-cloudflare build
 
     - name: Build an ElysiaJS app
       if: steps.detect.outputs.project-type == 'elysia'
       shell: bash
+      working-directory: ${{ inputs.app-path }}
       run: pnpm exec vite build
 
     - name: Build a generic app
       if: steps.detect.outputs.project-type == 'generic'
       shell: bash
+      working-directory: ${{ inputs.app-path }}
       run: |
         if node -e "process.exit(require('./package.json').scripts?.build ? 0 : 1)"; then
           pnpm build
@@ -128,6 +183,7 @@ runs:
     - name: Write the worker secrets file
       if: inputs.secret-names != ''
       shell: bash
+      working-directory: ${{ inputs.app-path }}
       env:
         SECRET_NAMES: ${{ inputs.secret-names }}
       run: |
@@ -138,16 +194,19 @@ runs:
     - name: Deploy to production
       if: inputs.mode == 'production'
       shell: bash
+      working-directory: ${{ inputs.app-path }}
       run: pnpm exec wrangler deploy
 
     - name: Sync the worker secrets in production
       if: inputs.mode == 'production' && inputs.secret-names != ''
       shell: bash
+      working-directory: ${{ inputs.app-path }}
       run: pnpm exec wrangler secret bulk "$SECRETS_FILE"
 
     - name: Deploy the branch Preview
       if: inputs.mode == 'preview'
       shell: bash
+      working-directory: ${{ inputs.app-path }}
       env:
         BRANCH: ${{ github.ref_name }}
         PREVIEW_ARGS: ${{ inputs.preview-args }}
@@ -171,5 +230,5 @@ runs:
         WORKER_NAME: ${{ inputs.worker-name }}
         KEEP: ${{ inputs.keep-previews }}
         CURRENT_BRANCH: ${{ github.ref_name }}
-        APP_DIR: .
+        APP_DIR: ${{ inputs.app-path }}
       run: node "$GITHUB_ACTION_PATH/scripts/prune-previews.mjs"

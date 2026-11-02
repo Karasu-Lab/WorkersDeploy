@@ -55,6 +55,10 @@ environment.
 | --- | --- | --- | --- |
 | `mode` | yes | — | `production` deploys; `preview` deploys a branch Preview |
 | `worker-name` | yes | — | Worker name; also whose Previews are pruned |
+| `monorepo` | no | `""` | Monorepo (`owner/name`) to assemble the workspace from instead of building the calling repository standalone. It is cloned without submodules; only `app-path` and the paths in `submodules` are initialized, and `app-path` is pinned to the triggering commit |
+| `monorepo-branch` | no | `dev` | Monorepo branch cloned for the assembly |
+| `app-path` | with `monorepo` | `.` | App directory inside the assembled workspace |
+| `submodules` | no | `""` | Space- or newline-separated submodule paths to initialize besides `app-path`; unlisted submodules are never cloned |
 | `secret-names` | no | `""` | Space-separated secret names read from the environment, written to a secrets file for Previews and bulk-synced in production. Unset names fall back to the app's `env.local` vars in its wrangler config |
 | `preview-args` | no | `""` | Extra arguments for the Preview command; `{branch}` is substituted |
 | `node-version` | no | `24` | Node.js version |
