@@ -61,11 +61,11 @@ inputs:
     required: false
     default: ".env.example"
   vars-json:
-    description: "Pass `${{ toJSON(vars) }}`; only the names the app declares or requires are read from it"
+    description: "The caller's vars context as JSON (toJSON of vars); only the names the app declares or requires are read from it"
     required: false
     default: "{}"
   secrets-json:
-    description: "Pass `${{ toJSON(secrets) }}`; only the names the app declares or requires are read from it"
+    description: "The caller's secrets context as JSON (toJSON of secrets); only the names the app declares or requires are read from it"
     required: false
     default: "{}"
   preview-args:
