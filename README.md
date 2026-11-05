@@ -44,7 +44,16 @@ jobs:
         with:
           mode: production
           worker-name: example-karasu256-com
+          secret-names: INTERNAL_API_SECRET
+          vars-json: ${{ toJSON(vars) }}
+          secrets-json: ${{ toJSON(secrets) }}
 ```
+
+Only `secret-names` lists names, and only the ones that must be set.
+Everything else is picked up from the names the app declares in its
+`.env.example`, so adding a variable to the app never requires editing
+the workflow. Values the caller does not declare (such as
+`CLOUDFLARE_API_TOKEN`) are never passed to the worker.
 
 A `preview` job is the same with `mode: preview` and the `preview`
 environment.
@@ -59,7 +68,10 @@ environment.
 | `monorepo-branch` | no | `dev` | Monorepo branch cloned for the assembly |
 | `app-path` | with `monorepo` | `.` | App directory inside the assembled workspace |
 | `submodules` | no | `""` | Space- or newline-separated submodule paths to initialize besides `app-path`; unlisted submodules are never cloned |
-| `secret-names` | no | `""` | Space-separated secret names read from the environment, written to a secrets file for Previews and bulk-synced in production. The deployment fails when any name has no value |
+| `secret-names` | no | `""` | Space-separated names of the secrets the worker cannot run without. The deployment fails when any of them has no value. Every other name declared in `env-file` is optional: it is passed to the worker as a secret when it has a value and skipped otherwise |
+| `env-file` | no | `.env.example` | File in the app directory declaring the names the app reads (`KEY=` lines). Names the wrangler config already defines as vars are left out |
+| `vars-json` | no | `{}` | Pass `${{ toJSON(vars) }}`; only declared or required names are read from it |
+| `secrets-json` | no | `{}` | Pass `${{ toJSON(secrets) }}`; only declared or required names are read from it |
 | `preview-args` | no | `""` | Extra arguments for the Preview command; `{branch}` is substituted |
 | `node-version` | no | `24` | Node.js version |
 | `pnpm-version` | no | `12.15.0` | pnpm version, used when the app does not pin one through the `packageManager` field |
