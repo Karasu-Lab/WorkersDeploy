@@ -47,9 +47,10 @@ inputs:
   secret-names:
     description: >-
       Optional space-separated names of the secrets the worker cannot
-      run without. The deployment fails when any of them has no value.
-      Every other name the app declares in env-file is passed to the
-      worker as a secret when it has a value, and skipped otherwise.
+      run without. A name with no value is skipped, like every other
+      name the app declares in env-file: what is passed to the worker
+      is whatever the caller's contexts provide, so no name has to be
+      listed per environment.
     required: false
     default: ""
   env-file:
@@ -157,8 +158,7 @@ runs:
             | from_entries')
         MISSING=$(jq -r --arg required "$SECRET_NAMES" '. as $r | [$required | splits("\\s+") | select(. != "" and $r[.] == null)] | join(" ")' <<< "$RESOLVED")
         if [ -n "$MISSING" ]; then
-          echo "::error::No value is set for the required secrets: $MISSING"
-          exit 1
+          echo "::warning::No value is set for the secrets: $MISSING; skipping them"
         fi
         DELIMITER="WD_$(openssl rand -hex 16)"
         jq -r --arg d "$DELIMITER" 'to_entries[] | "\(.key)<<\($d)\n\(.value)\n\($d)"' <<< "$RESOLVED" >> "$GITHUB_ENV"

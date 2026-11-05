@@ -68,7 +68,7 @@ environment.
 | `monorepo-branch` | no | `dev` | Monorepo branch cloned for the assembly |
 | `app-path` | with `monorepo` | `.` | App directory inside the assembled workspace |
 | `submodules` | no | `""` | Space- or newline-separated submodule paths to initialize besides `app-path`; unlisted submodules are never cloned |
-| `secret-names` | no | `""` | Space-separated names of the secrets the worker cannot run without. The deployment fails when any of them has no value. Every other name declared in `env-file` is optional: it is passed to the worker as a secret when it has a value and skipped otherwise |
+| `secret-names` | no | `""` | Space-separated names of the secrets the worker cannot run without. A name with no value is skipped, like every other name declared in `env-file`: what is passed to the worker is whatever the caller's contexts provide, so no name has to be listed per environment |
 | `env-file` | no | `.env.example` | File in the app directory declaring the names the app reads (`KEY=` lines). Names the wrangler config already defines as vars are left out |
 | `vars-json` | no | `{}` | Pass `${{ toJSON(vars) }}`; only declared or required names are read from it |
 | `secrets-json` | no | `{}` | Pass `${{ toJSON(secrets) }}`; only declared or required names are read from it |
