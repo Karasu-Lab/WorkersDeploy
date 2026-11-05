@@ -84,3 +84,10 @@ environment.
   read the `@karasu-lab/*` packages from GitHub Packages.
 - Any variables the app itself needs at build or run time (for example
   `NEXT_PUBLIC_*` site keys, or the values behind `secret-names`).
+
+## Releases
+
+Releases are made by CI (`.github/workflows/release.yml`), never by hand.
+Every push to `main` is tagged with the next patch version (`v1.0.N`) and
+the floating `v1` tag is moved to the same commit, which is the tag callers
+use.

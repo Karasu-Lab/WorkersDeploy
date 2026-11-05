@@ -1,0 +1,36 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+
+env:
+  MAJOR: "1"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Tag the release and move the major tag
+        run: |
+          if [ -n "$(git tag --points-at HEAD --list "v${MAJOR}.*.*")" ]; then
+            exit 0
+          fi
+          LATEST=$(git tag --list "v${MAJOR}.*.*" --sort=-v:refname | head -n 1)
+          LATEST=${LATEST:-v${MAJOR}.0.-1}
+          IFS=. read -r _ MINOR PATCH <<< "$LATEST"
+          NEXT="v${MAJOR}.${MINOR}.$((PATCH + 1))"
+          git tag "$NEXT"
+          git tag -f "v${MAJOR}"
+          git push origin "$NEXT"
+          git push --force origin "v${MAJOR}"
