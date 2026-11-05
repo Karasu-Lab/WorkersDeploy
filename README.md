@@ -59,7 +59,7 @@ environment.
 | `monorepo-branch` | no | `dev` | Monorepo branch cloned for the assembly |
 | `app-path` | with `monorepo` | `.` | App directory inside the assembled workspace |
 | `submodules` | no | `""` | Space- or newline-separated submodule paths to initialize besides `app-path`; unlisted submodules are never cloned |
-| `secret-names` | no | `""` | Space-separated secret names read from the environment, written to a secrets file for Previews and bulk-synced in production. Unset names fall back to the app's `env.local` vars in its wrangler config |
+| `secret-names` | no | `""` | Space-separated secret names read from the environment, written to a secrets file for Previews and bulk-synced in production. The deployment fails when any name has no value |
 | `preview-args` | no | `""` | Extra arguments for the Preview command; `{branch}` is substituted |
 | `node-version` | no | `24` | Node.js version |
 | `pnpm-version` | no | `12.15.0` | pnpm version, used when the app does not pin one through the `packageManager` field |

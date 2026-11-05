@@ -49,8 +49,8 @@ inputs:
       Optional space-separated names exposed to the worker as secrets.
       Their values are read from the environment; they are written to a
       secrets file used by the Preview and, in production, synced with
-      wrangler secret bulk. Names with no value fall back to the app's
-      env.local vars in its wrangler config, as before.
+      wrangler secret bulk. The deployment fails when any name has no
+      value.
     required: false
     default: ""
   preview-args:
@@ -101,7 +101,11 @@ runs:
       id: detect
       shell: bash
       working-directory: ${{ inputs.app-path }}
-      run: node "$GITHUB_ACTION_PATH/scripts/detect-project.mjs"
+      run: |
+        TYPE=$(jq -r '(.dependencies // {}) + (.devDependencies // {})
+          | if has("next") then "nextjs" elif has("elysia") then "elysia" else "generic" end' package.json)
+        echo "Detected project type: $TYPE"
+        echo "project-type=$TYPE" >> "$GITHUB_OUTPUT"
 
     - name: Resolve the pnpm version
       id: pnpm
@@ -183,13 +187,23 @@ runs:
     - name: Write the worker secrets file
       if: inputs.secret-names != ''
       shell: bash
-      working-directory: ${{ inputs.app-path }}
       env:
         SECRET_NAMES: ${{ inputs.secret-names }}
       run: |
+        MISSING=()
+        for NAME in $SECRET_NAMES; do
+          if [ -z "${!NAME:-}" ]; then
+            MISSING+=("$NAME")
+          fi
+        done
+        if [ ${#MISSING[@]} -gt 0 ]; then
+          echo "::error::No value is set for: ${MISSING[*]}"
+          exit 1
+        fi
         SECRETS_FILE="$RUNNER_TEMP/worker-secrets.json"
         echo "SECRETS_FILE=$SECRETS_FILE" >> "$GITHUB_ENV"
-        node "$GITHUB_ACTION_PATH/scripts/worker-secrets-file.mjs" . "$SECRETS_FILE" $SECRET_NAMES
+        (umask 077 && jq -n '$ARGS.positional | map({key: ., value: env[.]}) | from_entries' --args $SECRET_NAMES > "$SECRETS_FILE")
+        echo "Wrote the secrets: $SECRET_NAMES"
 
     - name: Deploy to production
       if: inputs.mode == 'production'
@@ -231,4 +245,42 @@ runs:
         KEEP: ${{ inputs.keep-previews }}
         CURRENT_BRANCH: ${{ github.ref_name }}
         APP_DIR: ${{ inputs.app-path }}
-      run: node "$GITHUB_ACTION_PATH/scripts/prune-previews.mjs"
+      run: |
+        set +e
+        if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+          echo "::warning::prune-previews: CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are required; skipping"
+          exit 0
+        fi
+        API="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/workers/$WORKER_NAME/previews"
+        CURRENT_SLUG="${CURRENT_BRANCH//[^a-zA-Z0-9-]/-}"
+
+        if LIST=$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$API") \
+          && STALE=$(jq -r --argjson keep "$KEEP" --arg current "$CURRENT_BRANCH" --arg slug "$CURRENT_SLUG" '
+            (if type == "array" then . else .result end)
+            | map({id: (.name // .id), time: (.created_on // .modified_on // "")})
+            | map(select(.id))
+            | sort_by(.time) | reverse
+            | .[$keep:] | map(.id | select(. != $current and . != $slug)) | .[]' <<< "$LIST"); then
+          :
+        else
+          echo "::warning::prune-previews: API listing unavailable; falling back to git branches"
+          if ! git -C "$APP_DIR" fetch origin '+refs/heads/*:refs/remotes/prune/*'; then
+            echo "::warning::prune-previews: git fallback failed; nothing pruned"
+            exit 0
+          fi
+          STALE=$(git -C "$APP_DIR" for-each-ref --sort=-committerdate --format='%(refname:strip=3)' refs/remotes/prune \
+            | grep -vxE 'HEAD|main' \
+            | tail -n +$((KEEP + 1)) \
+            | grep -vxF "$CURRENT_BRANCH" \
+            | sed 's/[^a-zA-Z0-9-]/-/g')
+        fi
+
+        for ID in $STALE; do
+          STATUS=$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$API/$(jq -rn --arg id "$ID" '$id | @uri')")
+          if [ "${STATUS:0:1}" = "2" ] || [ "$STATUS" = "404" ]; then
+            echo "deleted preview: $ID"
+          else
+            echo "::warning::prune-previews: could not delete preview $ID (HTTP $STATUS)"
+          fi
+        done
