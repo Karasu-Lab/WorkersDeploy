@@ -60,6 +60,7 @@ environment.
 | `app-path` | with `monorepo` | `.` | App directory inside the assembled workspace |
 | `submodules` | no | `""` | Space- or newline-separated submodule paths to initialize besides `app-path`; unlisted submodules are never cloned |
 | `secret-names` | no | `""` | Space-separated secret names read from the environment, written to a secrets file for Previews and bulk-synced in production. The deployment fails when any name has no value |
+| `optional-secret-names` | no | `""` | Space-separated secret names handled like `secret-names`, except that names with no value are skipped instead of failing the deployment |
 | `preview-args` | no | `""` | Extra arguments for the Preview command; `{branch}` is substituted |
 | `node-version` | no | `24` | Node.js version |
 | `pnpm-version` | no | `12.15.0` | pnpm version, used when the app does not pin one through the `packageManager` field |

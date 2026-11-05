@@ -53,6 +53,13 @@ inputs:
       value.
     required: false
     default: ""
+  optional-secret-names:
+    description: >-
+      Optional space-separated names exposed to the worker as secrets
+      like secret-names, except that names with no value are skipped
+      instead of failing the deployment.
+    required: false
+    default: ""
   preview-args:
     description: "Optional extra arguments for the Preview command. Placeholder: {branch}"
     required: false
@@ -185,25 +192,40 @@ runs:
         fi
 
     - name: Write the worker secrets file
-      if: inputs.secret-names != ''
+      if: inputs.secret-names != '' || inputs.optional-secret-names != ''
       shell: bash
       env:
         SECRET_NAMES: ${{ inputs.secret-names }}
+        OPTIONAL_SECRET_NAMES: ${{ inputs.optional-secret-names }}
       run: |
+        NAMES=()
         MISSING=()
         for NAME in $SECRET_NAMES; do
           if [ -z "${!NAME:-}" ]; then
             MISSING+=("$NAME")
+          else
+            NAMES+=("$NAME")
           fi
         done
         if [ ${#MISSING[@]} -gt 0 ]; then
           echo "::error::No value is set for: ${MISSING[*]}"
           exit 1
         fi
+        SKIPPED=()
+        for NAME in $OPTIONAL_SECRET_NAMES; do
+          if [ -z "${!NAME:-}" ]; then
+            SKIPPED+=("$NAME")
+          else
+            NAMES+=("$NAME")
+          fi
+        done
         SECRETS_FILE="$RUNNER_TEMP/worker-secrets.json"
         echo "SECRETS_FILE=$SECRETS_FILE" >> "$GITHUB_ENV"
-        (umask 077 && jq -n '$ARGS.positional | map({key: ., value: env[.]}) | from_entries' --args $SECRET_NAMES > "$SECRETS_FILE")
-        echo "Wrote the secrets: $SECRET_NAMES"
+        (umask 077 && jq -n '$ARGS.positional | map({key: ., value: env[.]}) | from_entries' --args "${NAMES[@]}" > "$SECRETS_FILE")
+        echo "Wrote the secrets: ${NAMES[*]}"
+        if [ ${#SKIPPED[@]} -gt 0 ]; then
+          echo "Skipped the optional secrets with no value: ${SKIPPED[*]}"
+        fi
 
     - name: Deploy to production
       if: inputs.mode == 'production'
@@ -212,7 +234,7 @@ runs:
       run: pnpm exec wrangler deploy
 
     - name: Sync the worker secrets in production
-      if: inputs.mode == 'production' && inputs.secret-names != ''
+      if: inputs.mode == 'production' && (inputs.secret-names != '' || inputs.optional-secret-names != '')
       shell: bash
       working-directory: ${{ inputs.app-path }}
       run: pnpm exec wrangler secret bulk "$SECRETS_FILE"
@@ -224,7 +246,7 @@ runs:
       env:
         BRANCH: ${{ github.ref_name }}
         PREVIEW_ARGS: ${{ inputs.preview-args }}
-        HAS_SECRETS: ${{ inputs.secret-names != '' }}
+        HAS_SECRETS: ${{ inputs.secret-names != '' || inputs.optional-secret-names != '' }}
       run: |
         ARGS=()
         if [ "$HAS_SECRETS" = "true" ]; then
