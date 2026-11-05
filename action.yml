@@ -46,13 +46,28 @@ inputs:
     default: ""
   secret-names:
     description: >-
-      Optional space-separated names exposed to the worker as secrets.
-      Their values are read from the environment; they are written to a
-      secrets file used by the Preview and, in production, synced with
-      wrangler secret bulk. The deployment fails when any name has no
-      value.
+      Optional space-separated names of the secrets the worker cannot
+      run without. The deployment fails when any of them has no value.
+      Every other name the app declares in env-file is passed to the
+      worker as a secret when it has a value, and skipped otherwise.
     required: false
     default: ""
+  env-file:
+    description: >-
+      File in the app directory that declares the names the app reads
+      (KEY= lines). Names declared here are passed to the worker when
+      they have a value, except those the wrangler config already
+      defines as vars.
+    required: false
+    default: ".env.example"
+  vars-json:
+    description: "Pass `${{ toJSON(vars) }}`; only the names the app declares or requires are read from it"
+    required: false
+    default: "{}"
+  secrets-json:
+    description: "Pass `${{ toJSON(secrets) }}`; only the names the app declares or requires are read from it"
+    required: false
+    default: "{}"
   preview-args:
     description: "Optional extra arguments for the Preview command. Placeholder: {branch}"
     required: false
@@ -106,6 +121,56 @@ runs:
           | if has("next") then "nextjs" elif has("elysia") then "elysia" else "generic" end' package.json)
         echo "Detected project type: $TYPE"
         echo "project-type=$TYPE" >> "$GITHUB_OUTPUT"
+
+    - name: Resolve the app's variables and worker secrets
+      id: secrets
+      shell: bash
+      working-directory: ${{ inputs.app-path }}
+      env:
+        SECRET_NAMES: ${{ inputs.secret-names }}
+        ENV_FILE: ${{ inputs.env-file }}
+        VARS_JSON: ${{ inputs.vars-json }}
+        SECRETS_JSON: ${{ inputs.secrets-json }}
+      run: |
+        DECLARED=""
+        if [ -f "$ENV_FILE" ]; then
+          DECLARED=$(sed -nE 's/^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)=.*/\2/p' "$ENV_FILE")
+        fi
+        CONFIG_VARS=""
+        for NAME in $DECLARED; do
+          if grep -qs "\"$NAME\"" wrangler.jsonc wrangler.json; then
+            CONFIG_VARS+="$NAME "
+          fi
+        done
+        RESOLVED=$(jq -n \
+          --argjson vars "$VARS_JSON" \
+          --argjson secrets "$SECRETS_JSON" \
+          --arg required "$SECRET_NAMES" \
+          --arg declared "$DECLARED" \
+          --arg configured "$CONFIG_VARS" '
+            ([$required | splits("\\s+") | select(. != "")]) as $req
+            | ([$configured | splits("\\s+") | select(. != "")]) as $cfg
+            | ([$declared | splits("\\s+") | select(. != "")] - $cfg) as $dec
+            | ($req + $dec | unique)
+            | map({key: ., value: (env[.] // $secrets[.] // $vars[.] // "")})
+            | map(select(.value != ""))
+            | from_entries')
+        MISSING=$(jq -r --arg required "$SECRET_NAMES" '. as $r | [$required | splits("\\s+") | select(. != "" and $r[.] == null)] | join(" ")' <<< "$RESOLVED")
+        if [ -n "$MISSING" ]; then
+          echo "::error::No value is set for the required secrets: $MISSING"
+          exit 1
+        fi
+        DELIMITER="WD_$(openssl rand -hex 16)"
+        jq -r --arg d "$DELIMITER" 'to_entries[] | "\(.key)<<\($d)\n\(.value)\n\($d)"' <<< "$RESOLVED" >> "$GITHUB_ENV"
+        if [ "$RESOLVED" = "{}" ]; then
+          echo "has-secrets=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        SECRETS_FILE="$RUNNER_TEMP/worker-secrets.json"
+        (umask 077 && printf '%s' "$RESOLVED" > "$SECRETS_FILE")
+        echo "SECRETS_FILE=$SECRETS_FILE" >> "$GITHUB_ENV"
+        echo "has-secrets=true" >> "$GITHUB_OUTPUT"
+        echo "Worker secrets: $(jq -r 'keys | join(" ")' <<< "$RESOLVED")"
 
     - name: Resolve the pnpm version
       id: pnpm
@@ -184,27 +249,6 @@ runs:
           pnpm build
         fi
 
-    - name: Write the worker secrets file
-      if: inputs.secret-names != ''
-      shell: bash
-      env:
-        SECRET_NAMES: ${{ inputs.secret-names }}
-      run: |
-        MISSING=()
-        for NAME in $SECRET_NAMES; do
-          if [ -z "${!NAME:-}" ]; then
-            MISSING+=("$NAME")
-          fi
-        done
-        if [ ${#MISSING[@]} -gt 0 ]; then
-          echo "::error::No value is set for: ${MISSING[*]}"
-          exit 1
-        fi
-        SECRETS_FILE="$RUNNER_TEMP/worker-secrets.json"
-        echo "SECRETS_FILE=$SECRETS_FILE" >> "$GITHUB_ENV"
-        (umask 077 && jq -n '$ARGS.positional | map({key: ., value: env[.]}) | from_entries' --args $SECRET_NAMES > "$SECRETS_FILE")
-        echo "Wrote the secrets: $SECRET_NAMES"
-
     - name: Deploy to production
       if: inputs.mode == 'production'
       shell: bash
@@ -212,7 +256,7 @@ runs:
       run: pnpm exec wrangler deploy
 
     - name: Sync the worker secrets in production
-      if: inputs.mode == 'production' && inputs.secret-names != ''
+      if: inputs.mode == 'production' && steps.secrets.outputs.has-secrets == 'true'
       shell: bash
       working-directory: ${{ inputs.app-path }}
       run: pnpm exec wrangler secret bulk "$SECRETS_FILE"
@@ -224,7 +268,7 @@ runs:
       env:
         BRANCH: ${{ github.ref_name }}
         PREVIEW_ARGS: ${{ inputs.preview-args }}
-        HAS_SECRETS: ${{ inputs.secret-names != '' }}
+        HAS_SECRETS: ${{ steps.secrets.outputs.has-secrets }}
       run: |
         ARGS=()
         if [ "$HAS_SECRETS" = "true" ]; then
