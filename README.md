@@ -12,7 +12,10 @@ the app repository's own `pnpm-lock.yaml`.
 2. Detects the project type from `package.json` and branches the build:
    - **Next.js** (`next` dependency): exports the public variables from
      `wrangler.jsonc` for the target environment, then builds with
-     OpenNext (`opennextjs-cloudflare build`).
+     OpenNext (`opennextjs-cloudflare build`) and populates the OpenNext
+     cache (`opennextjs-cloudflare populateCache local`), which places
+     prerendered pages into the static assets for apps that use the
+     static assets incremental cache and is a no-op for the rest.
    - **ElysiaJS** (`elysia` dependency): builds with Vite (`vite build`).
    - Anything else: runs the app's `build` script if it has one.
 3. Keeps the lockfile in step before installing: `pnpm install
