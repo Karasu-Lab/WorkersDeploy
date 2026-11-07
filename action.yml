@@ -234,6 +234,12 @@ runs:
       working-directory: ${{ inputs.app-path }}
       run: pnpm exec opennextjs-cloudflare build
 
+    - name: Populate the OpenNext cache
+      if: steps.detect.outputs.project-type == 'nextjs'
+      shell: bash
+      working-directory: ${{ inputs.app-path }}
+      run: pnpm exec opennextjs-cloudflare populateCache local
+
     - name: Build an ElysiaJS app
       if: steps.detect.outputs.project-type == 'elysia'
       shell: bash
