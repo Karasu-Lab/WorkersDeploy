@@ -23,9 +23,16 @@ the app repository's own `pnpm-lock.yaml`.
    branch (with rebase-and-retry on push conflicts), then the install
    itself runs with `--frozen-lockfile`.
 4. Converges on the Workers deployment: `wrangler deploy` in
-   production (plus `wrangler secret bulk` when secrets are configured),
-   or `wrangler preview` for a branch Preview, and prunes old Previews
-   (newest 5 by default).
+   production, then `wrangler secret bulk` to make the worker's secrets
+   exactly the ones the caller provides (the secrets the caller no longer
+   provides are deleted, because a deployment never deletes secrets by
+   itself), or `wrangler preview` for a branch Preview, and prunes old
+   Previews (newest 5 by default).
+
+The command parsing and the JSON handling of these steps live in the
+`@karasu-lab/workersdeploy` pnpm project in `scripts/`, which `action.yml`
+runs with Node.js 24 (it strips the TypeScript types itself, so there is no
+build step and nothing to install on the runner).
 
 ## Usage
 
@@ -79,11 +86,12 @@ environment.
 | `app-path` | with `monorepo` | `.` | App directory inside the assembled workspace |
 | `submodules` | no | `""` | Space- or newline-separated submodule paths to initialize besides `app-path`; unlisted submodules are never cloned |
 | `secret-names` | no | `""` | Space-separated names of the secrets the worker cannot run without. A name with no value is skipped, like every other name declared in `env-file`: what is passed to the worker is whatever the caller's contexts provide, so no name has to be listed per environment. When empty, every name in `vars-json` and `secrets-json`, and every variable set in the caller's job `env`, is passed, except the deploy credentials and the names the wrangler config defines |
+| `reset-secrets` | no | `true` | In production, delete the worker secrets the caller no longer provides, so a variable or secret removed from the repository does not stay on the worker. `false` only adds and updates |
 | `env-file` | no | `.env.example` | File in the app directory declaring the names the app reads (`KEY=` lines). Names the wrangler config already defines as vars are left out |
 | `vars-json` | no | `{}` | Pass `${{ toJSON(vars) }}`; every name is read from it unless `secret-names` is set |
 | `secrets-json` | no | `{}` | Pass `${{ toJSON(secrets) }}`; every name is read from it unless `secret-names` is set |
 | `preview-args` | no | `""` | Extra arguments for the Preview command; `{branch}` is substituted |
-| `node-version` | no | `24` | Node.js version |
+| `node-version` | no | `24` | Node.js version; the scripts of this action need 24 or later |
 | `pnpm-version` | no | `12.15.0` | pnpm version, used when the app does not pin one through the `packageManager` field |
 | `keep-previews` | no | `5` | How many of the newest Previews to keep |
 
