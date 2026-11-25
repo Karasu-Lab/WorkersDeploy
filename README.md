@@ -53,9 +53,11 @@ jobs:
 ```
 
 When `secret-names` is empty, every name in `vars-json` and
-`secrets-json` is passed to the worker, together with the names the app
-declares in its `.env.example`, so adding a variable or a secret to the
-repository never requires editing the workflow. The deploy credentials
+`secrets-json`, and every variable the caller sets in its job `env`
+(for example a value mapped from a differently named secret), is passed
+to the worker, together with the names the app declares in its
+`.env.example`, so adding a variable or a secret to the repository never
+requires editing the workflow. The deploy credentials
 (`github_token`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`,
 `NODE_AUTH_TOKEN`) and the names the wrangler config already defines as
 vars are left out.
@@ -76,7 +78,7 @@ environment.
 | `monorepo-branch` | no | `dev` | Monorepo branch cloned for the assembly |
 | `app-path` | with `monorepo` | `.` | App directory inside the assembled workspace |
 | `submodules` | no | `""` | Space- or newline-separated submodule paths to initialize besides `app-path`; unlisted submodules are never cloned |
-| `secret-names` | no | `""` | Space-separated names of the secrets the worker cannot run without. A name with no value is skipped, like every other name declared in `env-file`: what is passed to the worker is whatever the caller's contexts provide, so no name has to be listed per environment. When empty, every name in `vars-json` and `secrets-json` is passed, except the deploy credentials and the names the wrangler config defines |
+| `secret-names` | no | `""` | Space-separated names of the secrets the worker cannot run without. A name with no value is skipped, like every other name declared in `env-file`: what is passed to the worker is whatever the caller's contexts provide, so no name has to be listed per environment. When empty, every name in `vars-json` and `secrets-json`, and every variable set in the caller's job `env`, is passed, except the deploy credentials and the names the wrangler config defines |
 | `env-file` | no | `.env.example` | File in the app directory declaring the names the app reads (`KEY=` lines). Names the wrangler config already defines as vars are left out |
 | `vars-json` | no | `{}` | Pass `${{ toJSON(vars) }}`; every name is read from it unless `secret-names` is set |
 | `secrets-json` | no | `{}` | Pass `${{ toJSON(secrets) }}`; every name is read from it unless `secret-names` is set |
