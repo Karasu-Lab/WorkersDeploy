@@ -58,13 +58,13 @@ jobs:
           secrets-json: ${{ toJSON(secrets) }}
 ```
 
-Only the names the app declares in its `.env.example`, plus the names
-listed in `secret-names`, are passed to the worker. The rest of the
-caller's contexts is never dumped into the worker, so a repository or
-organization secret the app does not read (a registry token, for example)
-cannot end up on it.
+Only the names listed in `secret-names` are passed to the worker. The rest
+of the caller's contexts is never dumped into the worker, so a repository
+or organization secret the app does not read (a registry token, for
+example) cannot end up on it, and the action does not read any file of the
+app to find the names.
 
-The value of a declared name comes, in this order, from the caller's job
+The value of a listed name comes, in this order, from the caller's job
 `env` (for example a value mapped from a differently named secret), the
 `secrets` context and the `vars` context. The job's GitHub environment
 (`production` for a production job, `preview` for a Preview job) decides
@@ -91,9 +91,8 @@ environment.
 | `monorepo-branch` | no | `dev` | Monorepo branch cloned for the assembly |
 | `app-path` | with `monorepo` | `.` | App directory inside the assembled workspace |
 | `submodules` | no | `""` | Space- or newline-separated submodule paths to initialize besides `app-path`; unlisted submodules are never cloned |
-| `secret-names` | no | `""` | Space-separated names the worker cannot run without, in addition to the names declared in `env-file`. A name with no value is skipped with a warning |
-| `reset-secrets` | no | `true` | In production, delete the worker secrets the app does not declare, so a variable or secret removed from the repository does not stay on the worker. `false` only adds and updates |
-| `env-file` | no | `.env.example` | File in the app directory declaring the names the app reads (`KEY=` lines). Names the wrangler config defines as vars for the deployed environment are left out |
+| `secret-names` | no | `""` | Space-separated names of the variables and secrets to pass to the worker. A name with no value is skipped with a warning, and a name the wrangler config defines as a var for the deployed environment is left out |
+| `reset-secrets` | no | `true` | In production, delete the worker secrets that are not in `secret-names`, so a variable or secret removed from the repository does not stay on the worker. `false` only adds and updates |
 | `vars-json` | no | `{}` | Pass `${{ toJSON(vars) }}`; the job's GitHub environment decides which values it holds |
 | `secrets-json` | no | `{}` | Pass `${{ toJSON(secrets) }}`; the job's GitHub environment decides which values it holds |
 | `preview-args` | no | `""` | Extra arguments for the Preview command; `{branch}` is substituted |
@@ -119,7 +118,7 @@ Every push to `main` is tagged with the next patch version (`v2.0.N`) and
 the floating `v2` tag is moved to the same commit, which is the tag callers
 use.
 
-`v2` passes only the names the app declares to the worker, where `v1`
-passed every name of the caller's contexts. A caller moves to `v2` after
-its `.env.example` declares every name its worker reads. The `v1` tag stays
-where it is.
+`v2` passes only the names listed in `secret-names` to the worker, where `v1`
+passed every name of the caller's contexts and the names of the app's
+`.env.example`. A caller moves to `v2` after its workflow lists every name
+its worker reads. The `v1` tag stays where it is.
