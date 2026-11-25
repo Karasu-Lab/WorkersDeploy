@@ -4,10 +4,12 @@ description: >-
   checks the repository out, keeps its pnpm-lock.yaml in step with its
   package.json, installs against the published @karasu-lab/* packages,
   builds for the detected project type — Next.js via OpenNext, ElysiaJS
-  via Vite — and converges on a single Workers deployment (production
-  deploy, or a per-branch Preview), pruning old Previews afterwards.
-  Alternatively assembles the workspace from a monorepo, initializing
-  only the listed submodules.
+  via Vite — and deploys it. The default branch deploys production; every
+  other branch deploys the preview worker (the wrangler environment named
+  by preview-env). The variables and secrets of the job's GitHub
+  environment are bound to the worker when it is uploaded. Alternatively
+  assembles the workspace from a monorepo, initializing only the listed
+  submodules.
 author: Karasu Lab
 branding:
   icon: upload-cloud
@@ -15,11 +17,24 @@ branding:
 
 inputs:
   mode:
-    description: "production deploys the worker; preview deploys a branch Preview"
-    required: true
-  worker-name:
-    description: "Name of the Cloudflare Worker (also the name whose Previews are pruned)"
-    required: true
+    description: >-
+      auto (the default) deploys production from the repository's default
+      branch and the preview worker from every other branch. production or
+      preview forces one of them.
+    required: false
+    default: auto
+  preview-env:
+    description: "Name of the wrangler environment of the preview worker, selected through CLOUDFLARE_ENV when the mode is preview"
+    required: false
+    default: dev
+  exclude:
+    description: >-
+      Space-separated names of the variables and secrets that must not be
+      passed to the worker, besides the names the action never passes
+      (CLOUDFLARE_*, GITHUB_*, ACTIONS_*, RUNNER_*, NODE_AUTH_TOKEN and
+      github_token).
+    required: false
+    default: ""
   monorepo:
     description: >-
       Optional monorepo (owner/name) to assemble the workspace from. When
@@ -44,38 +59,23 @@ inputs:
       never cloned.
     required: false
     default: ""
-  secret-names:
-    description: >-
-      Space-separated names of the variables and secrets to pass to the
-      worker. Only these names are passed, never the rest of the caller's
-      contexts. A name with no value is skipped with a warning. A name
-      that the wrangler config defines as a var for the deployed
-      environment (vars for production, previews.vars and env.preview.vars
-      for a Preview) is left out; the vars of other environments, such as
-      env.local, are not considered.
-    required: false
-    default: ""
   reset-secrets:
     description: >-
-      In production, delete the worker secrets that are not in
-      secret-names, so that the worker's secrets are exactly the listed
-      ones. A deployment never deletes secrets on its own, so a variable or
-      secret removed from the repository would otherwise stay on the
-      worker. Set to "false" to only add and update.
+      Delete the worker secrets that are not among the secrets passed, so
+      that the worker's secrets are exactly the ones the job's environment
+      holds. A deployment never deletes secrets on its own, so a secret
+      removed from the repository would otherwise stay on the worker. Set to
+      "false" to only add and update.
     required: false
     default: "true"
   vars-json:
-    description: "The caller's vars context as JSON (toJSON of vars). The job's GitHub environment (production or preview) decides which values it holds, and a value of the environment wins over one of the repository or the organization"
+    description: "The caller's vars context as JSON (toJSON of vars). The job's GitHub environment decides which values it holds, and a value of the environment wins over one of the repository or the organization. Every entry is bound to the worker as a variable"
     required: false
     default: "{}"
   secrets-json:
-    description: "The caller's secrets context as JSON (toJSON of secrets). The job's GitHub environment (production or preview) decides which values it holds, and a value of the environment wins over one of the repository or the organization"
+    description: "The caller's secrets context as JSON (toJSON of secrets). The job's GitHub environment decides which values it holds, and a value of the environment wins over one of the repository or the organization. Every entry is bound to the worker as a secret, and wins over a variable of the same name"
     required: false
     default: "{}"
-  preview-args:
-    description: "Optional extra arguments for the Preview command. Placeholder: {branch}"
-    required: false
-    default: ""
   node-version:
     description: "Node.js version"
     required: false
@@ -86,10 +86,6 @@ inputs:
       the packageManager field (the api apps rely on this default)
     required: false
     default: "12.15.0"
-  keep-previews:
-    description: "How many of the newest Previews to keep"
-    required: false
-    default: "5"
 
 runs:
   using: composite
@@ -131,17 +127,20 @@ runs:
         ACTION_PATH: ${{ github.action_path }}
       run: node "$ACTION_PATH/scripts/bin/detect-project-type.ts"
 
-    - name: Resolve the app's variables and worker secrets
-      id: secrets
+    - name: Resolve the deployment environment, variables and secrets
+      id: environment
       shell: bash
       working-directory: ${{ inputs.app-path }}
       env:
         ACTION_PATH: ${{ github.action_path }}
         MODE: ${{ inputs.mode }}
-        SECRET_NAMES: ${{ inputs.secret-names }}
+        PREVIEW_ENV: ${{ inputs.preview-env }}
+        EXCLUDE: ${{ inputs.exclude }}
+        REF_NAME: ${{ github.ref_name }}
+        DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         VARS_JSON: ${{ inputs.vars-json }}
         SECRETS_JSON: ${{ inputs.secrets-json }}
-      run: node "$ACTION_PATH/scripts/bin/resolve-secrets.ts"
+      run: node "$ACTION_PATH/scripts/bin/resolve-environment.ts"
 
     - name: Resolve the pnpm version
       id: pnpm
@@ -220,39 +219,21 @@ runs:
           pnpm build
         fi
 
-    - name: Deploy to production
-      if: inputs.mode == 'production'
-      shell: bash
-      working-directory: ${{ inputs.app-path }}
-      run: pnpm exec wrangler deploy
-
-    - name: Sync the worker secrets in production
-      if: inputs.mode == 'production' && (steps.secrets.outputs.has-secrets == 'true' || inputs.reset-secrets == 'true')
+    - name: Deploy the worker
       shell: bash
       working-directory: ${{ inputs.app-path }}
       env:
         ACTION_PATH: ${{ github.action_path }}
-        HAS_SECRETS: ${{ steps.secrets.outputs.has-secrets }}
+        HAS_VARS: ${{ steps.environment.outputs.has-vars }}
+        HAS_SECRETS: ${{ steps.environment.outputs.has-secrets }}
+      run: node "$ACTION_PATH/scripts/bin/deploy.ts"
+
+    - name: Remove the worker secrets that are no longer provided
+      if: inputs.reset-secrets == 'true'
+      shell: bash
+      working-directory: ${{ inputs.app-path }}
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        HAS_SECRETS: ${{ steps.environment.outputs.has-secrets }}
         RESET_SECRETS: ${{ inputs.reset-secrets }}
       run: node "$ACTION_PATH/scripts/bin/sync-secrets.ts"
-
-    - name: Deploy the branch Preview
-      if: inputs.mode == 'preview'
-      shell: bash
-      working-directory: ${{ inputs.app-path }}
-      env:
-        ACTION_PATH: ${{ github.action_path }}
-        BRANCH: ${{ github.ref_name }}
-        PREVIEW_ARGS: ${{ inputs.preview-args }}
-        HAS_SECRETS: ${{ steps.secrets.outputs.has-secrets }}
-      run: node "$ACTION_PATH/scripts/bin/deploy-preview.ts"
-
-    - name: Prune old Previews
-      shell: bash
-      env:
-        ACTION_PATH: ${{ github.action_path }}
-        WORKER_NAME: ${{ inputs.worker-name }}
-        KEEP: ${{ inputs.keep-previews }}
-        CURRENT_BRANCH: ${{ github.ref_name }}
-        APP_DIR: ${{ inputs.app-path }}
-      run: node "$ACTION_PATH/scripts/bin/prune-previews.ts" || true
