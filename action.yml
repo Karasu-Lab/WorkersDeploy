@@ -46,32 +46,24 @@ inputs:
     default: ""
   secret-names:
     description: >-
-      Optional space-separated names the worker cannot run without, in
-      addition to the names the app declares in env-file. A name with no
-      value is skipped with a warning. Only the declared and the listed
-      names are passed to the worker, never the rest of the caller's
-      contexts.
+      Space-separated names of the variables and secrets to pass to the
+      worker. Only these names are passed, never the rest of the caller's
+      contexts. A name with no value is skipped with a warning. A name
+      that the wrangler config defines as a var for the deployed
+      environment (vars for production, previews.vars and env.preview.vars
+      for a Preview) is left out; the vars of other environments, such as
+      env.local, are not considered.
     required: false
     default: ""
   reset-secrets:
     description: >-
-      In production, delete the worker secrets that the app does not
-      declare, so that the worker's secrets are exactly the ones resolved
-      from the declared names. A deployment never deletes secrets on its
-      own, so a variable or secret removed from the repository would
-      otherwise stay on the worker. Set to "false" to only add and update.
+      In production, delete the worker secrets that are not in
+      secret-names, so that the worker's secrets are exactly the listed
+      ones. A deployment never deletes secrets on its own, so a variable or
+      secret removed from the repository would otherwise stay on the
+      worker. Set to "false" to only add and update.
     required: false
     default: "true"
-  env-file:
-    description: >-
-      File in the app directory that declares the names the app reads
-      (KEY= lines). Names declared here are passed to the worker when
-      they have a value, except those that the wrangler config defines
-      as vars for the deployed environment: vars for production,
-      previews.vars and env.preview.vars for a Preview. The vars of
-      other environments, such as env.local, are not considered.
-    required: false
-    default: ".env.example"
   vars-json:
     description: "The caller's vars context as JSON (toJSON of vars). The job's GitHub environment (production or preview) decides which values it holds, and a value of the environment wins over one of the repository or the organization"
     required: false
@@ -147,7 +139,6 @@ runs:
         ACTION_PATH: ${{ github.action_path }}
         MODE: ${{ inputs.mode }}
         SECRET_NAMES: ${{ inputs.secret-names }}
-        ENV_FILE: ${{ inputs.env-file }}
         VARS_JSON: ${{ inputs.vars-json }}
         SECRETS_JSON: ${{ inputs.secrets-json }}
       run: node "$ACTION_PATH/scripts/bin/resolve-secrets.ts"

@@ -3,11 +3,8 @@ import { join } from 'node:path';
 import { exportVariable, input, setOutput, warning } from '../src/github.ts';
 import { parseJsonc } from '../src/jsonc.ts';
 import { parseObject, stringValues } from '../src/json.ts';
-import { parseDeclaredNames, resolveWorkerSecrets } from '../src/secrets.ts';
+import { resolveWorkerSecrets } from '../src/secrets.ts';
 import { deployedVarNames, type DeployMode } from '../src/wrangler.ts';
-
-const envFile = input('ENV_FILE');
-const declared = envFile && existsSync(envFile) ? parseDeclaredNames(readFileSync(envFile, 'utf8')) : [];
 
 const mode: DeployMode = input('MODE') === 'preview' ? 'preview' : 'production';
 const deployedVars = new Set(
@@ -16,7 +13,6 @@ const deployedVars = new Set(
 
 const { resolved, missing } = resolveWorkerSecrets({
   secretNames: input('SECRET_NAMES'),
-  declared,
   sources: {
     vars: stringValues(parseObject(input('VARS_JSON', '{}'), 'vars-json')),
     secrets: stringValues(parseObject(input('SECRETS_JSON', '{}'), 'secrets-json')),
@@ -26,7 +22,7 @@ const { resolved, missing } = resolveWorkerSecrets({
 });
 
 if (missing.length > 0) {
-  warning(`No value is set for the secrets: ${missing.join(' ')}; skipping them`);
+  warning(`No value is set for: ${missing.join(' ')}; skipping them`);
 }
 for (const [name, value] of Object.entries(resolved)) {
   exportVariable(name, value);
