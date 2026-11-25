@@ -1,4 +1,4 @@
-const INFRASTRUCTURE_NAMES = [/^CLOUDFLARE_/, /^GITHUB_/, /^ACTIONS_/, /^RUNNER_/, /^NODE_AUTH_TOKEN$/, /^github_token$/i];
+const INFRASTRUCTURE_NAMES = [/^CLOUDFLARE_API_TOKEN$/, /^GITHUB_/, /^ACTIONS_/, /^RUNNER_/, /^NODE_AUTH_TOKEN$/, /^github_token$/i];
 
 export interface ResolveOptions {
   vars: Record<string, string>;
