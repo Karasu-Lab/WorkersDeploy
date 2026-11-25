@@ -11,7 +11,7 @@ concurrency:
   group: release
 
 env:
-  MAJOR: "1"
+  MAJOR: "2"
 
 jobs:
   release:

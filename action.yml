@@ -46,22 +46,19 @@ inputs:
     default: ""
   secret-names:
     description: >-
-      Optional space-separated names of the secrets the worker cannot
-      run without. A name with no value is skipped, like every other
-      name the app declares in env-file: what is passed to the worker
-      is whatever the caller's contexts provide, so no name has to be
-      listed per environment. When this is empty, every name in
-      vars-json and secrets-json, and every variable the caller sets in
-      its job env, is passed on its own, except the deploy credentials
-      and the names the wrangler config defines.
+      Optional space-separated names the worker cannot run without, in
+      addition to the names the app declares in env-file. A name with no
+      value is skipped with a warning. Only the declared and the listed
+      names are passed to the worker, never the rest of the caller's
+      contexts.
     required: false
     default: ""
   reset-secrets:
     description: >-
-      In production, delete the worker secrets that the caller no longer
-      provides, so that the worker's secrets are exactly the ones resolved
-      from the caller's contexts. A deployment never deletes secrets on
-      its own, so a variable or secret removed from the repository would
+      In production, delete the worker secrets that the app does not
+      declare, so that the worker's secrets are exactly the ones resolved
+      from the declared names. A deployment never deletes secrets on its
+      own, so a variable or secret removed from the repository would
       otherwise stay on the worker. Set to "false" to only add and update.
     required: false
     default: "true"
@@ -69,16 +66,18 @@ inputs:
     description: >-
       File in the app directory that declares the names the app reads
       (KEY= lines). Names declared here are passed to the worker when
-      they have a value, except those the wrangler config already
-      defines as vars.
+      they have a value, except those that the wrangler config defines
+      as vars for the deployed environment: vars for production,
+      previews.vars and env.preview.vars for a Preview. The vars of
+      other environments, such as env.local, are not considered.
     required: false
     default: ".env.example"
   vars-json:
-    description: "The caller's vars context as JSON (toJSON of vars); every name is read from it unless secret-names is set, in which case only the names the app declares or requires are"
+    description: "The caller's vars context as JSON (toJSON of vars). The job's GitHub environment (production or preview) decides which values it holds, and a value of the environment wins over one of the repository or the organization"
     required: false
     default: "{}"
   secrets-json:
-    description: "The caller's secrets context as JSON (toJSON of secrets); every name is read from it unless secret-names is set, in which case only the names the app declares or requires are"
+    description: "The caller's secrets context as JSON (toJSON of secrets). The job's GitHub environment (production or preview) decides which values it holds, and a value of the environment wins over one of the repository or the organization"
     required: false
     default: "{}"
   preview-args:
@@ -146,11 +145,11 @@ runs:
       working-directory: ${{ inputs.app-path }}
       env:
         ACTION_PATH: ${{ github.action_path }}
+        MODE: ${{ inputs.mode }}
         SECRET_NAMES: ${{ inputs.secret-names }}
         ENV_FILE: ${{ inputs.env-file }}
         VARS_JSON: ${{ inputs.vars-json }}
         SECRETS_JSON: ${{ inputs.secrets-json }}
-        CALLER_ENV_JSON: ${{ toJSON(env) }}
       run: node "$ACTION_PATH/scripts/bin/resolve-secrets.ts"
 
     - name: Resolve the pnpm version
