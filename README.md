@@ -52,11 +52,16 @@ jobs:
           secrets-json: ${{ toJSON(secrets) }}
 ```
 
-Only `secret-names` lists names, and only the ones that must be set.
-Everything else is picked up from the names the app declares in its
-`.env.example`, so adding a variable to the app never requires editing
-the workflow. Values the caller does not declare (such as
-`CLOUDFLARE_API_TOKEN`) are never passed to the worker.
+When `secret-names` is empty, every name in `vars-json` and
+`secrets-json` is passed to the worker, together with the names the app
+declares in its `.env.example`, so adding a variable or a secret to the
+repository never requires editing the workflow. The deploy credentials
+(`github_token`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`,
+`NODE_AUTH_TOKEN`) and the names the wrangler config already defines as
+vars are left out.
+
+When `secret-names` lists names, only those and the names declared in
+`.env.example` are passed, as before.
 
 A `preview` job is the same with `mode: preview` and the `preview`
 environment.
@@ -71,10 +76,10 @@ environment.
 | `monorepo-branch` | no | `dev` | Monorepo branch cloned for the assembly |
 | `app-path` | with `monorepo` | `.` | App directory inside the assembled workspace |
 | `submodules` | no | `""` | Space- or newline-separated submodule paths to initialize besides `app-path`; unlisted submodules are never cloned |
-| `secret-names` | no | `""` | Space-separated names of the secrets the worker cannot run without. A name with no value is skipped, like every other name declared in `env-file`: what is passed to the worker is whatever the caller's contexts provide, so no name has to be listed per environment |
+| `secret-names` | no | `""` | Space-separated names of the secrets the worker cannot run without. A name with no value is skipped, like every other name declared in `env-file`: what is passed to the worker is whatever the caller's contexts provide, so no name has to be listed per environment. When empty, every name in `vars-json` and `secrets-json` is passed, except the deploy credentials and the names the wrangler config defines |
 | `env-file` | no | `.env.example` | File in the app directory declaring the names the app reads (`KEY=` lines). Names the wrangler config already defines as vars are left out |
-| `vars-json` | no | `{}` | Pass `${{ toJSON(vars) }}`; only declared or required names are read from it |
-| `secrets-json` | no | `{}` | Pass `${{ toJSON(secrets) }}`; only declared or required names are read from it |
+| `vars-json` | no | `{}` | Pass `${{ toJSON(vars) }}`; every name is read from it unless `secret-names` is set |
+| `secrets-json` | no | `{}` | Pass `${{ toJSON(secrets) }}`; every name is read from it unless `secret-names` is set |
 | `preview-args` | no | `""` | Extra arguments for the Preview command; `{branch}` is substituted |
 | `node-version` | no | `24` | Node.js version |
 | `pnpm-version` | no | `12.15.0` | pnpm version, used when the app does not pin one through the `packageManager` field |

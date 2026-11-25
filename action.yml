@@ -50,7 +50,9 @@ inputs:
       run without. A name with no value is skipped, like every other
       name the app declares in env-file: what is passed to the worker
       is whatever the caller's contexts provide, so no name has to be
-      listed per environment.
+      listed per environment. When this is empty, every name in
+      vars-json and secrets-json is passed on its own, except the
+      deploy credentials and the names the wrangler config defines.
     required: false
     default: ""
   env-file:
@@ -62,11 +64,11 @@ inputs:
     required: false
     default: ".env.example"
   vars-json:
-    description: "The caller's vars context as JSON (toJSON of vars); only the names the app declares or requires are read from it"
+    description: "The caller's vars context as JSON (toJSON of vars); every name is read from it unless secret-names is set, in which case only the names the app declares or requires are"
     required: false
     default: "{}"
   secrets-json:
-    description: "The caller's secrets context as JSON (toJSON of secrets); only the names the app declares or requires are read from it"
+    description: "The caller's secrets context as JSON (toJSON of secrets); every name is read from it unless secret-names is set, in which case only the names the app declares or requires are"
     required: false
     default: "{}"
   preview-args:
@@ -136,6 +138,11 @@ runs:
         DECLARED=""
         if [ -f "$ENV_FILE" ]; then
           DECLARED=$(sed -nE 's/^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)=.*/\2/p' "$ENV_FILE")
+        fi
+        if [ -z "$SECRET_NAMES" ]; then
+          CONTEXT_NAMES=$(jq -rn --argjson vars "$VARS_JSON" --argjson secrets "$SECRETS_JSON" '($vars + $secrets) | keys[]' \
+            | grep -vxE 'github_token|CLOUDFLARE_API_TOKEN|CLOUDFLARE_ACCOUNT_ID|NODE_AUTH_TOKEN' || true)
+          DECLARED=$(printf '%s\n%s\n' "$DECLARED" "$CONTEXT_NAMES" | sed '/^$/d' | sort -u)
         fi
         CONFIG_VARS=""
         for NAME in $DECLARED; do
