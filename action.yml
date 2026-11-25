@@ -171,6 +171,7 @@ runs:
       shell: bash
       env:
         BRANCH: ${{ github.ref_name }}
+        NODE_AUTH_TOKEN: ${{ github.token }}
       run: |
         pnpm install --lockfile-only
         git config user.name "github-actions[bot]"
@@ -192,6 +193,7 @@ runs:
     - name: Install dependencies
       shell: bash
       env:
+        NODE_AUTH_TOKEN: ${{ github.token }}
         MONOREPO: ${{ inputs.monorepo }}
         APP_PATH: ${{ inputs.app-path }}
       run: |
