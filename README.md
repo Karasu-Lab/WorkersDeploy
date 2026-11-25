@@ -71,7 +71,7 @@ what differs per environment, such as URLs and the authentication clients,
 is set as a variable or a secret of the `production` and `preview`
 environments, with the name the worker reads.
 
-These names are never passed: `CLOUDFLARE_*`, `GITHUB_*`, `ACTIONS_*`,
+These names are never passed: `CLOUDFLARE_API_TOKEN`, `GITHUB_*`, `ACTIONS_*`,
 `RUNNER_*`, `NODE_AUTH_TOKEN`, `github_token`, the ones listed in `exclude`,
 and the names the wrangler config already defines as vars of the deployed
 environment (top-level `vars` in production, `env.<preview-env>.vars` in

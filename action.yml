@@ -31,8 +31,8 @@ inputs:
     description: >-
       Space-separated names of the variables and secrets that must not be
       passed to the worker, besides the names the action never passes
-      (CLOUDFLARE_*, GITHUB_*, ACTIONS_*, RUNNER_*, NODE_AUTH_TOKEN and
-      github_token).
+      (CLOUDFLARE_API_TOKEN, GITHUB_*, ACTIONS_*, RUNNER_*, NODE_AUTH_TOKEN
+      and github_token).
     required: false
     default: ""
   monorepo:
