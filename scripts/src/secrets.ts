@@ -1,9 +1,6 @@
-const EXCLUDED_CONTEXT_NAMES = new Set(['github_token', 'CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID', 'NODE_AUTH_TOKEN']);
-
 export interface SecretSources {
   vars: Record<string, string>;
   secrets: Record<string, string>;
-  callerEnv: Record<string, string>;
   processEnv: Record<string, string | undefined>;
 }
 
@@ -11,7 +8,7 @@ export interface ResolveOptions {
   secretNames: string;
   declared: string[];
   sources: SecretSources;
-  isConfigured: (name: string) => boolean;
+  isDeployedVar: (name: string) => boolean;
 }
 
 export function parseNames(text: string): string[] {
@@ -25,24 +22,10 @@ export function parseDeclaredNames(envFileText: string): string[] {
   });
 }
 
-function sortedUnique(names: string[]): string[] {
-  return [...new Set(names)].sort();
-}
-
 export function resolveWorkerSecrets(options: ResolveOptions): { resolved: Record<string, string>; missing: string[] } {
-  const { secretNames, sources, isConfigured } = options;
-  const required = parseNames(secretNames);
-
-  let declared = options.declared;
-  if (secretNames === '') {
-    const contextNames = Object.keys({ ...sources.vars, ...sources.secrets, ...sources.callerEnv }).filter(
-      (name) => !EXCLUDED_CONTEXT_NAMES.has(name)
-    );
-    declared = sortedUnique([...declared, ...contextNames]);
-  }
-
-  const configured = new Set(declared.filter(isConfigured));
-  const names = sortedUnique([...required, ...declared.filter((name) => !configured.has(name))]);
+  const { sources, isDeployedVar } = options;
+  const required = parseNames(options.secretNames);
+  const names = [...new Set([...required, ...options.declared.filter((name) => !isDeployedVar(name))])].sort();
 
   const resolved: Record<string, string> = {};
   for (const name of names) {

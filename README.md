@@ -49,7 +49,7 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
     steps:
-      - uses: Karasu-Lab/WorkersDeploy@v1
+      - uses: Karasu-Lab/WorkersDeploy@v2
         with:
           mode: production
           worker-name: example-karasu256-com
@@ -58,18 +58,25 @@ jobs:
           secrets-json: ${{ toJSON(secrets) }}
 ```
 
-When `secret-names` is empty, every name in `vars-json` and
-`secrets-json`, and every variable the caller sets in its job `env`
-(for example a value mapped from a differently named secret), is passed
-to the worker, together with the names the app declares in its
-`.env.example`, so adding a variable or a secret to the repository never
-requires editing the workflow. The deploy credentials
-(`github_token`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`,
-`NODE_AUTH_TOKEN`) and the names the wrangler config already defines as
-vars are left out.
+Only the names the app declares in its `.env.example`, plus the names
+listed in `secret-names`, are passed to the worker. The rest of the
+caller's contexts is never dumped into the worker, so a repository or
+organization secret the app does not read (a registry token, for example)
+cannot end up on it.
 
-When `secret-names` lists names, only those and the names declared in
-`.env.example` are passed, as before.
+The value of a declared name comes, in this order, from the caller's job
+`env` (for example a value mapped from a differently named secret), the
+`secrets` context and the `vars` context. The job's GitHub environment
+(`production` for a production job, `preview` for a Preview job) decides
+which values those contexts hold, and a value of the environment wins over
+one of the repository or the organization. So what differs per environment,
+such as the database and the authentication clients, is set as a variable
+or a secret of the `production` and `preview` environments.
+
+A name is not passed when the wrangler config defines it as a var for the
+environment being deployed: `vars` for production, `previews.vars` and
+`env.preview.vars` for a Preview. The vars of other environments, such as
+`env.local`, do not count.
 
 A `preview` job is the same with `mode: preview` and the `preview`
 environment.
@@ -84,11 +91,11 @@ environment.
 | `monorepo-branch` | no | `dev` | Monorepo branch cloned for the assembly |
 | `app-path` | with `monorepo` | `.` | App directory inside the assembled workspace |
 | `submodules` | no | `""` | Space- or newline-separated submodule paths to initialize besides `app-path`; unlisted submodules are never cloned |
-| `secret-names` | no | `""` | Space-separated names of the secrets the worker cannot run without. A name with no value is skipped, like every other name declared in `env-file`: what is passed to the worker is whatever the caller's contexts provide, so no name has to be listed per environment. When empty, every name in `vars-json` and `secrets-json`, and every variable set in the caller's job `env`, is passed, except the deploy credentials and the names the wrangler config defines |
-| `reset-secrets` | no | `true` | In production, delete the worker secrets the caller no longer provides, so a variable or secret removed from the repository does not stay on the worker. `false` only adds and updates |
-| `env-file` | no | `.env.example` | File in the app directory declaring the names the app reads (`KEY=` lines). Names the wrangler config already defines as vars are left out |
-| `vars-json` | no | `{}` | Pass `${{ toJSON(vars) }}`; every name is read from it unless `secret-names` is set |
-| `secrets-json` | no | `{}` | Pass `${{ toJSON(secrets) }}`; every name is read from it unless `secret-names` is set |
+| `secret-names` | no | `""` | Space-separated names the worker cannot run without, in addition to the names declared in `env-file`. A name with no value is skipped with a warning |
+| `reset-secrets` | no | `true` | In production, delete the worker secrets the app does not declare, so a variable or secret removed from the repository does not stay on the worker. `false` only adds and updates |
+| `env-file` | no | `.env.example` | File in the app directory declaring the names the app reads (`KEY=` lines). Names the wrangler config defines as vars for the deployed environment are left out |
+| `vars-json` | no | `{}` | Pass `${{ toJSON(vars) }}`; the job's GitHub environment decides which values it holds |
+| `secrets-json` | no | `{}` | Pass `${{ toJSON(secrets) }}`; the job's GitHub environment decides which values it holds |
 | `preview-args` | no | `""` | Extra arguments for the Preview command; `{branch}` is substituted |
 | `node-version` | no | `24` | Node.js version; the scripts of this action need 24 or later |
 | `pnpm-version` | no | `12.15.0` | pnpm version, used when the app does not pin one through the `packageManager` field |
@@ -108,6 +115,11 @@ environment.
 ## Releases
 
 Releases are made by CI (`.github/workflows/release.yml`), never by hand.
-Every push to `main` is tagged with the next patch version (`v1.0.N`) and
-the floating `v1` tag is moved to the same commit, which is the tag callers
+Every push to `main` is tagged with the next patch version (`v2.0.N`) and
+the floating `v2` tag is moved to the same commit, which is the tag callers
 use.
+
+`v2` passes only the names the app declares to the worker, where `v1`
+passed every name of the caller's contexts. A caller moves to `v2` after
+its `.env.example` declares every name its worker reads. The `v1` tag stays
+where it is.

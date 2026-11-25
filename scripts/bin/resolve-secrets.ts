@@ -1,12 +1,18 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { exportVariable, input, setOutput, warning } from '../src/github.ts';
+import { parseJsonc } from '../src/jsonc.ts';
 import { parseObject, stringValues } from '../src/json.ts';
 import { parseDeclaredNames, resolveWorkerSecrets } from '../src/secrets.ts';
+import { deployedVarNames, type DeployMode } from '../src/wrangler.ts';
 
 const envFile = input('ENV_FILE');
 const declared = envFile && existsSync(envFile) ? parseDeclaredNames(readFileSync(envFile, 'utf8')) : [];
-const wranglerConfigs = ['wrangler.jsonc', 'wrangler.json'].filter((file) => existsSync(file)).map((file) => readFileSync(file, 'utf8'));
+
+const mode: DeployMode = input('MODE') === 'preview' ? 'preview' : 'production';
+const deployedVars = new Set(
+  ['wrangler.jsonc', 'wrangler.json'].filter((file) => existsSync(file)).flatMap((file) => deployedVarNames(parseJsonc(readFileSync(file, 'utf8')), mode))
+);
 
 const { resolved, missing } = resolveWorkerSecrets({
   secretNames: input('SECRET_NAMES'),
@@ -14,10 +20,9 @@ const { resolved, missing } = resolveWorkerSecrets({
   sources: {
     vars: stringValues(parseObject(input('VARS_JSON', '{}'), 'vars-json')),
     secrets: stringValues(parseObject(input('SECRETS_JSON', '{}'), 'secrets-json')),
-    callerEnv: stringValues(parseObject(input('CALLER_ENV_JSON', '{}'), 'the caller env')),
     processEnv: process.env,
   },
-  isConfigured: (name) => wranglerConfigs.some((config) => config.includes(`"${name}"`)),
+  isDeployedVar: (name) => deployedVars.has(name),
 });
 
 if (missing.length > 0) {
