@@ -48,7 +48,6 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-      NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN || secrets.GITHUB_TOKEN }}
     steps:
       - uses: Karasu-Lab/WorkersDeploy@v1
         with:
@@ -98,8 +97,11 @@ environment.
 ### Environment the caller provides
 
 - `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` for wrangler.
-- `NODE_AUTH_TOKEN` (the name the Vercel deployments use) so pnpm can
-  read the `@karasu-lab/*` packages from GitHub Packages.
+- `packages: read` in the job's `permissions`, so that the job's own
+  `GITHUB_TOKEN` can read the `@karasu-lab/*` packages from GitHub
+  Packages. The action passes that token to pnpm itself; a
+  `NODE_AUTH_TOKEN` is no longer needed in the workflow and a secret of
+  that name is not used.
 - Any variables the app itself needs at build or run time (for example
   `NEXT_PUBLIC_*` site keys, or the values behind `secret-names`).
 
